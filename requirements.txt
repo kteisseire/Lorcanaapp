@@ -1,0 +1,1 @@
+# Dépendances externes non requises pour cette version (stdlib uniquement)
