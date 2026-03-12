@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-from app import run_server
+from app import compute_stats, parse_score, run_server
 
 
 def request(port, method, path, body=None, headers=None):
@@ -81,3 +81,22 @@ def test_homepage_has_clear_login_call_to_action(tmp_path):
     assert status == 200
     assert b"href='/login'" in body
     assert b"Se connecter" in body
+
+
+def test_score_parsing_and_dashboard_stats_computation():
+    assert parse_score("2-1") == (2, 1)
+    assert parse_score(" 0 - 2 ") == (0, 2)
+    assert parse_score("x-y") is None
+
+    rows = [
+        ("Tournoi A", "Ronde 1", "Ruby", "Rubis", "2-0", "Moi", "01/01/2026 09:00"),
+        ("Tournoi A", "Ronde 2", "Sapphire", "Saphir", "1-2", "Adversaire", "01/01/2026 10:00"),
+        ("Tournoi B", "Ronde 1", "Steel", "Acier", "2-1", "Moi", "02/01/2026 11:00"),
+    ]
+    stats = compute_stats(rows)
+
+    assert stats["total"] == 3
+    assert stats["wins"] == 2
+    assert stats["losses"] == 1
+    assert stats["winrate"] == 66.7
+    assert stats["tossrate"] == 66.7
