@@ -1,4 +1,5 @@
 import html
+import os
 import secrets
 import sqlite3
 from datetime import datetime
@@ -46,6 +47,44 @@ def init_db(db_path: Path = DB_PATH):
     conn.close()
 
 
+def parse_score(score: str) -> tuple[int, int] | None:
+    """Return (my_games, opponent_games) from a score like '2-1'."""
+    normalized = score.replace(" ", "")
+    if "-" not in normalized:
+        return None
+    left, right = normalized.split("-", 1)
+    if not (left.isdigit() and right.isdigit()):
+        return None
+    return int(left), int(right)
+
+
+def compute_stats(rows):
+    total_matches = len(rows)
+    wins = 0
+    losses = 0
+    toss_me = 0
+
+    for row in rows:
+        parsed = parse_score(row[4])
+        if parsed:
+            if parsed[0] > parsed[1]:
+                wins += 1
+            elif parsed[0] < parsed[1]:
+                losses += 1
+        if row[5] == "Moi":
+            toss_me += 1
+
+    winrate = round((wins / total_matches) * 100, 1) if total_matches else 0
+    tossrate = round((toss_me / total_matches) * 100, 1) if total_matches else 0
+    return {
+        "total": total_matches,
+        "wins": wins,
+        "losses": losses,
+        "winrate": winrate,
+        "tossrate": tossrate,
+    }
+
+
 def layout(content: str, username: str | None = None, flash: str = "") -> bytes:
     nav = (
         f"{html.escape(username)} · <a href='/logout'>Déconnexion</a>"
@@ -66,6 +105,9 @@ a{{color:#9ec0ff;text-decoration:none}} .flash{{background:#e4f4ff;padding:.5rem
 .cta-row{{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:1rem}}
 .cta{{display:inline-block;background:#2a6ef5;color:#fff !important;padding:.65rem 1rem;border-radius:8px}}
 .cta-secondary{{background:#1b1f33}}
+.stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin:1rem 0}}
+.card{{background:#f4f6fb;border-radius:8px;padding:.8rem}}
+.card strong{{display:block;font-size:1.4rem;margin-top:.2rem}}
 </style></head><body><header><strong>Lorcana Tournament Tracker</strong><nav>{nav}</nav></header><main>{flash_html}{content}</main></body></html>"""
     return page.encode("utf-8")
 
@@ -164,12 +206,20 @@ class LorcanaHandler(BaseHTTPRequestHandler):
                 (user[0],),
             ).fetchall()
             conn.close()
+            stats = compute_stats(rows)
             table_rows = "".join(
                 f"<tr><td>{html.escape(r[0])}</td><td>{html.escape(r[1])}</td><td>{html.escape(r[2])}</td><td>{html.escape(r[3])}</td><td>{html.escape(r[4])}</td><td>{html.escape(r[5])}</td><td>{html.escape(r[6])}</td></tr>"
                 for r in rows
             ) or "<tr><td colspan='7'>Aucune partie enregistrée.</td></tr>"
             body = f"""
             <h2>Mes parties de tournoi</h2>
+            <div class='stats'>
+              <div class='card'>Parties<strong>{stats['total']}</strong></div>
+              <div class='card'>Victoires<strong>{stats['wins']}</strong></div>
+              <div class='card'>Défaites<strong>{stats['losses']}</strong></div>
+              <div class='card'>Winrate<strong>{stats['winrate']}%</strong></div>
+              <div class='card'>Toss gagné<strong>{stats['tossrate']}%</strong></div>
+            </div>
             <form method='post'>
             <input name='tournament_name' placeholder='Nom du tournoi' required>
             <input name='round_name' placeholder='Round (ex: Ronde 1)' required>
@@ -266,4 +316,6 @@ def run_server(host="0.0.0.0", port=5000, db_path=DB_PATH):
 
 
 if __name__ == "__main__":
-    run_server()
+    port = int(os.environ.get("PORT", "5000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+    run_server(host=host, port=port)
